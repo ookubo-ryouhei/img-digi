@@ -132,7 +132,45 @@
       max-height: 360px;
       object-fit: contain;
     }
+    .color-panel {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
 
+    .bit-control {
+      display: grid;
+      gap: 10px;
+    }
+
+    .color-stats .stat-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .color-palette {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 6px;
+      max-width: 100%;
+    }
+
+    .color-swatch {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #111827;
+      font-size: 0.72rem;
+      font-weight: 700;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.35);
+    }
     .specimen-grid {
       display: grid;
       gap: 2px;
@@ -140,6 +178,12 @@
       overflow: hidden;
       background: #e5e7eb;
       min-height: 220px;
+      width: 100%;
+      aspect-ratio: 1;
+    }
+
+    .specimen-grid div {
+      aspect-ratio: 1;
     }
 
     .metadata {
@@ -220,9 +264,26 @@
           <div class="image-card" id="originalPreview">
             <p class="note">ここにアップロードした写真が表示されます。</p>
           </div>
-          <div class="image-card">
-            <canvas id="specimenCanvas" aria-label="標本化プレビュー"></canvas>
-            <div class="note">標本化結果をカラーブロックで表示します。</div>
+          <div class="image-card color-panel">
+            <div class="bit-control">
+              <label for="bitDepthSelect">量子化ビット数</label>
+              <select id="bitDepthSelect">
+                <option value="1">1 bit</option>
+                <option value="2">2 bit</option>
+                <option value="3">3 bit</option>
+                <option value="4">4 bit</option>
+                <option value="5">5 bit</option>
+                <option value="6" selected>6 bit</option>
+                <option value="7">7 bit</option>
+                <option value="8">8 bit</option>
+              </select>
+            </div>
+            <div class="color-stats">
+              <p class="note">標本化後の色数と、5bit以下の色パレットを表示します。</p>
+              <div class="stat-row"><strong>色数:</strong> <span id="colorsUsedText">0</span></div>
+              <div id="colorPalette" class="color-palette"></div>
+              <p class="note" id="colorNote"></p>
+            </div>
           </div>
         </div>
 
@@ -235,7 +296,8 @@
         <h2>標本データ</h2>
         <div class="metadata" id="metadata"></div>
         <h3>JSON出力</h3>
-        <pre id="jsonOutput">{}</pre>
+        <button id="toggleJsonButton" type="button">JSON出力表示</button>
+        <pre id="jsonOutput" style="display: none;">{}</pre>
       </section>
     </div>
 
@@ -248,12 +310,19 @@
     const quantOutput = document.getElementById('quantizationValue');
     const specimenGrid = document.getElementById('specimenGrid');
     const originalPreview = document.getElementById('originalPreview');
+    const specimenCanvas = document.getElementById('specimenCanvas');
     const sourceCanvas = document.getElementById('sourceCanvas');
     const metadataEl = document.getElementById('metadata');
+    const colorsUsedText = document.getElementById('colorsUsedText');
+    const colorPalette = document.getElementById('colorPalette');
+    const colorNote = document.getElementById('colorNote');
     const jsonOutput = document.getElementById('jsonOutput');
+    const toggleJsonButton = document.getElementById('toggleJsonButton');
+    const bitDepthSelect = document.getElementById('bitDepthSelect');
 
     let loadedImage = null;
     let currentQuant = Number(quantSlider.value);
+    let currentBitDepth = Number(bitDepthSelect.value);
     let sampleData = null;
 
     function setMetadata(values) {
@@ -282,6 +351,39 @@
         cell.style.backgroundColor = `rgb(${block.r}, ${block.g}, ${block.b})`;
         cell.title = `(${block.r}, ${block.g}, ${block.b})`;
         specimenGrid.appendChild(cell);
+      });
+    }
+
+    function quantizeColor(color, bits) {
+      if (bits >= 8) {
+        return color;
+      }
+      const levels = 2 ** bits;
+      const step = 255 / (levels - 1);
+      return {
+        r: Math.min(255, Math.max(0, Math.round(color.r / step) * step)),
+        g: Math.min(255, Math.max(0, Math.round(color.g / step) * step)),
+        b: Math.min(255, Math.max(0, Math.round(color.b / step) * step)),
+      };
+    }
+
+    function updateColorPalette(uniqueColors, bitDepth) {
+      const maxColors = Math.pow(2, 3 * bitDepth);
+      colorsUsedText.textContent = `${uniqueColors.length} / ${maxColors}`;
+      colorPalette.innerHTML = '';
+      if (bitDepth > 5) {
+        colorNote.textContent = `理論最大色数: ${maxColors}色。5bit以上のため、色表示は省略します。`;
+        return;
+      }
+      colorNote.textContent = `理論最大色数: ${maxColors}色`;
+      uniqueColors.slice(0, 64).forEach((color, index) => {
+        const swatch = document.createElement('div');
+        swatch.className = 'color-swatch';
+        swatch.style.backgroundColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+        swatch.style.color = (color.r * 0.299 + color.g * 0.587 + color.b * 0.114) > 150 ? '#111827' : '#ffffff';
+        swatch.textContent = index;
+        swatch.title = `rgb(${color.r}, ${color.g}, ${color.b})`;
+        colorPalette.appendChild(swatch);
       });
     }
 
@@ -334,11 +436,22 @@
           const w = col === grid - 1 ? width - x : blockW;
           const h = row === grid - 1 ? height - y : blockH;
           const avgColor = getAverageColor(data, x, y, w, h, width);
-          blocks.push(avgColor);
-        }
+        const quantColor = quantizeColor(avgColor, currentBitDepth);
+        blocks.push(quantColor);
       }
+    }
 
       renderSpecimenGrid(blocks, grid);
+
+      const uniqueMap = new Map();
+      blocks.forEach((block) => {
+        const key = `${block.r},${block.g},${block.b}`;
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, block);
+        }
+      });
+      const uniqueColors = Array.from(uniqueMap.values());
+      updateColorPalette(uniqueColors, currentBitDepth);
 
       const averageColor = blocks.reduce(
         (acc, c) => {
@@ -357,6 +470,8 @@
         width,
         height,
         grid,
+        bitDepth: currentBitDepth,
+        colorsUsed: uniqueColors.length,
         cells: blocks.length,
         blockSize: `${blockW} × ${blockH}`,
         averageColor: `rgb(${averageColor.r}, ${averageColor.g}, ${averageColor.b})`,
@@ -364,19 +479,18 @@
       };
 
       sampleData = values;
-      setMetadata(values);
       buildJsonOutput(values);
     }
 
     function drawImageToCanvas(image) {
       const maxCanvasSize = 480;
-      const ratio = Math.min(maxCanvasSize / image.width, maxCanvasSize / image.height, 1);
-      const width = Math.round(image.width * ratio);
-      const height = Math.round(image.height * ratio);
+      const size = Math.min(image.width, image.height, maxCanvasSize);
+      const x = (image.width - size) / 2;
+      const y = (image.height - size) / 2;
 
-      sourceCanvas.width = width;
-      sourceCanvas.height = height;
-      sourceCanvas.getContext('2d').drawImage(image, 0, 0, width, height);
+      sourceCanvas.width = size;
+      sourceCanvas.height = size;
+      sourceCanvas.getContext('2d').drawImage(image, x, y, size, size, 0, 0, size, size);
     }
 
     function showOriginalPreview(image) {
@@ -394,6 +508,16 @@
       specimenGrid.innerHTML = '<p class="note">ここに標本化された結果が表示されます。</p>';
       metadataEl.innerHTML = '';
       jsonOutput.textContent = '{}';
+      if (jsonOutput) {
+        jsonOutput.style.display = 'none';
+      }
+      if (toggleJsonButton) {
+        toggleJsonButton.textContent = 'JSON出力表示';
+      }
+      if (specimenCanvas) {
+        specimenCanvas.width = 0;
+        specimenCanvas.height = 0;
+      }
       sourceCanvas.width = 0;
       sourceCanvas.height = 0;
     }
@@ -432,6 +556,27 @@
       resetApp();
     });
 
+    bitDepthSelect.addEventListener('change', () => {
+      currentBitDepth = Number(bitDepthSelect.value);
+      if (loadedImage) {
+        sampleImage();
+      }
+    });
+
+    toggleJsonButton.addEventListener('click', () => {
+      if (jsonOutput.style.display === 'none') {
+        if (sampleData) {
+          buildJsonOutput(sampleData);
+        }
+        jsonOutput.style.display = 'block';
+        toggleJsonButton.textContent = 'JSON出力非表示';
+      } else {
+        jsonOutput.style.display = 'none';
+        toggleJsonButton.textContent = 'JSON出力表示';
+      }
+    });
+
+    
     resetApp();
   </script>
 </body>
