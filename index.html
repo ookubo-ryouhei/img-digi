@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>画像のデジタル標本化ツール</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #f5f7ff 0%, #eef2ff 100%);
+      color: #1f2937;
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3rem);
+    }
+
+    .header p {
+      margin: 0.75rem auto 0;
+      max-width: 780px;
+      color: #4b5563;
+      line-height: 1.6;
+    }
+
+    .grid {
+      display: grid;
+      gap: 20px;
+    }
+
+    .controls,
+    .results,
+    .preview {
+      background: white;
+      border: 1px solid #d1d5db;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.06);
+    }
+
+    .controls {
+      display: grid;
+      gap: 16px;
+    }
+
+    .controls label,
+    .results label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .controls input[type="file"],
+    .controls input[type="range"],
+    .controls button,
+    .controls select {
+      width: 100%;
+      font: inherit;
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .range-row output {
+      font-weight: 700;
+      min-width: 2.75rem;
+      text-align: right;
+    }
+
+    button {
+      border: none;
+      background: #4338ca;
+      color: white;
+      padding: 12px 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: transform 180ms ease, background 180ms ease;
+    }
+
+    button:hover {
+      background: #3730a3;
+      transform: translateY(-1px);
+    }
+
+    .preview {
+      display: grid;
+      gap: 16px;
+    }
+
+    .image-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .image-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fafbff;
+      min-height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .image-card img,
+    .image-card canvas {
+      width: 100%;
+      height: auto;
+      max-height: 360px;
+      object-fit: contain;
+    }
+
+    .specimen-grid {
+      display: grid;
+      gap: 2px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #e5e7eb;
+      min-height: 220px;
+    }
+
+    .metadata {
+      display: grid;
+      gap: 12px;
+    }
+
+    .metadata .data-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .metadata .data-row:last-child {
+      border-bottom: none;
+    }
+
+    .metadata strong {
+      color: #111827;
+    }
+
+    .results pre {
+      margin: 0;
+      padding: 14px;
+      background: #f8fafc;
+      border-radius: 14px;
+      overflow-x: auto;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .note {
+      color: #4b5563;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 900px) {
+      .image-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 16px;
+      }
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <h1>画像のデジタル標本化ツール</h1>
+      <p>撮影した写真をアップロードすると、自動で量子化した標本が表示されます。標本化の粒度は後からスライダーで調整できます。</p>
+    </header>
+
+    <div class="grid">
+      <section class="controls">
+        <label for="imageUpload">写真をアップロード</label>
+        <input type="file" id="imageUpload" accept="image/*" />
+
+        <div class="range-row">
+          <label for="quantizationSlider">標本化量子化数</label>
+          <output id="quantizationValue">16</output>
+        </div>
+        <input type="range" id="quantizationSlider" min="4" max="48" value="16" step="1" />
+
+        <button id="clearButton" type="button">リセット</button>
+      </section>
+
+      <section class="preview">
+        <div class="image-row">
+          <div class="image-card" id="originalPreview">
+            <p class="note">ここにアップロードした写真が表示されます。</p>
+          </div>
+          <div class="image-card">
+            <canvas id="specimenCanvas" aria-label="標本化プレビュー"></canvas>
+            <div class="note">標本化結果をカラーブロックで表示します。</div>
+          </div>
+        </div>
+
+        <div class="specimen-grid" id="specimenGrid">
+          <p class="note">ここに標本化された結果が表示されます。</p>
+        </div>
+      </section>
+
+      <section class="results">
+        <h2>標本データ</h2>
+        <div class="metadata" id="metadata"></div>
+        <h3>JSON出力</h3>
+        <pre id="jsonOutput">{}</pre>
+      </section>
+    </div>
+
+    <canvas id="sourceCanvas" hidden></canvas>
+  </main>
+
+  <script>
+    const uploadInput = document.getElementById('imageUpload');
+    const quantSlider = document.getElementById('quantizationSlider');
+    const quantOutput = document.getElementById('quantizationValue');
+    const specimenGrid = document.getElementById('specimenGrid');
+    const originalPreview = document.getElementById('originalPreview');
+    const sourceCanvas = document.getElementById('sourceCanvas');
+    const metadataEl = document.getElementById('metadata');
+    const jsonOutput = document.getElementById('jsonOutput');
+
+    let loadedImage = null;
+    let currentQuant = Number(quantSlider.value);
+    let sampleData = null;
+
+    function setMetadata(values) {
+      metadataEl.innerHTML = '';
+      const rows = [
+        ['Original image size', `${values.width} × ${values.height} px`],
+        ['Quantization grid', `${values.grid} × ${values.grid}`],
+        ['Total specimen cells', values.cells],
+        ['Sample block size', `${values.blockSize}px`],
+        ['Average sample color', values.averageColor],
+      ];
+
+      rows.forEach(([label, value]) => {
+        const row = document.createElement('div');
+        row.className = 'data-row';
+        row.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+        metadataEl.appendChild(row);
+      });
+    }
+
+    function renderSpecimenGrid(blocks, gridSize) {
+      specimenGrid.innerHTML = '';
+      specimenGrid.style.gridTemplateColumns = `repeat(${gridSize}, minmax(0, 1fr))`;
+      blocks.forEach((block) => {
+        const cell = document.createElement('div');
+        cell.style.backgroundColor = `rgb(${block.r}, ${block.g}, ${block.b})`;
+        cell.title = `(${block.r}, ${block.g}, ${block.b})`;
+        specimenGrid.appendChild(cell);
+      });
+    }
+
+    function buildJsonOutput(data) {
+      jsonOutput.textContent = JSON.stringify(data, null, 2);
+    }
+
+    function getAverageColor(data, x, y, w, h, width) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let count = 0;
+
+      for (let row = y; row < y + h; row++) {
+        for (let col = x; col < x + w; col++) {
+          const index = (row * width + col) * 4;
+          r += data[index];
+          g += data[index + 1];
+          b += data[index + 2];
+          count += 1;
+        }
+      }
+
+      return {
+        r: Math.round(r / count),
+        g: Math.round(g / count),
+        b: Math.round(b / count),
+      };
+    }
+
+    function sampleImage() {
+      if (!loadedImage) {
+        return;
+      }
+
+      const grid = currentQuant;
+      const width = sourceCanvas.width;
+      const height = sourceCanvas.height;
+      const ctx = sourceCanvas.getContext('2d');
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const blockW = Math.max(1, Math.floor(width / grid));
+      const blockH = Math.max(1, Math.floor(height / grid));
+      const blocks = [];
+
+      for (let row = 0; row < grid; row++) {
+        for (let col = 0; col < grid; col++) {
+          const x = col * blockW;
+          const y = row * blockH;
+          const w = col === grid - 1 ? width - x : blockW;
+          const h = row === grid - 1 ? height - y : blockH;
+          const avgColor = getAverageColor(data, x, y, w, h, width);
+          blocks.push(avgColor);
+        }
+      }
+
+      renderSpecimenGrid(blocks, grid);
+
+      const averageColor = blocks.reduce(
+        (acc, c) => {
+          acc.r += c.r;
+          acc.g += c.g;
+          acc.b += c.b;
+          return acc;
+        },
+        { r: 0, g: 0, b: 0 }
+      );
+      averageColor.r = Math.round(averageColor.r / blocks.length);
+      averageColor.g = Math.round(averageColor.g / blocks.length);
+      averageColor.b = Math.round(averageColor.b / blocks.length);
+
+      const values = {
+        width,
+        height,
+        grid,
+        cells: blocks.length,
+        blockSize: `${blockW} × ${blockH}`,
+        averageColor: `rgb(${averageColor.r}, ${averageColor.g}, ${averageColor.b})`,
+        specimen: blocks,
+      };
+
+      sampleData = values;
+      setMetadata(values);
+      buildJsonOutput(values);
+    }
+
+    function drawImageToCanvas(image) {
+      const maxCanvasSize = 480;
+      const ratio = Math.min(maxCanvasSize / image.width, maxCanvasSize / image.height, 1);
+      const width = Math.round(image.width * ratio);
+      const height = Math.round(image.height * ratio);
+
+      sourceCanvas.width = width;
+      sourceCanvas.height = height;
+      sourceCanvas.getContext('2d').drawImage(image, 0, 0, width, height);
+    }
+
+    function showOriginalPreview(image) {
+      originalPreview.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = image.src;
+      img.alt = 'Uploaded photo preview';
+      originalPreview.appendChild(img);
+    }
+
+    function resetApp() {
+      loadedImage = null;
+      sampleData = null;
+      originalPreview.innerHTML = '<p class="note">ここにアップロードした写真が表示されます。</p>';
+      specimenGrid.innerHTML = '<p class="note">ここに標本化された結果が表示されます。</p>';
+      metadataEl.innerHTML = '';
+      jsonOutput.textContent = '{}';
+      sourceCanvas.width = 0;
+      sourceCanvas.height = 0;
+    }
+
+    function handleUpload(event) {
+      const file = event.target.files[0];
+      if (!file) {
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => {
+          loadedImage = image;
+          drawImageToCanvas(image);
+          showOriginalPreview(image);
+          sampleImage();
+        };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    uploadInput.addEventListener('change', handleUpload);
+    quantSlider.addEventListener('input', () => {
+      currentQuant = Number(quantSlider.value);
+      quantOutput.textContent = currentQuant;
+      if (loadedImage) {
+        sampleImage();
+      }
+    });
+
+    document.getElementById('clearButton').addEventListener('click', () => {
+      uploadInput.value = '';
+      resetApp();
+    });
+
+    resetApp();
+  </script>
+</body>
+</html>
