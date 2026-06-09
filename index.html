@@ -585,7 +585,7 @@
     }
 
     // ── データ量計算式の表示 ───────────────────────────────────
-    function renderDataCalc(width, height, mode, bitDepth) {
+    function renderDataCalc(cols, rows, mode, bitDepth) {
       let bitsPerPixel;
       let bppLabel;
 
@@ -600,7 +600,7 @@
         bppLabel = `${bitDepth} bit/ch × 3ch = ${bitsPerPixel} bit/px`;
       }
 
-      const totalBits  = width * height * bitsPerPixel;
+      const totalBits  = cols * rows * bitsPerPixel;
       const totalBytes = Math.round(totalBits / 8);
       const kb = totalBytes / 1024;
       const mb = kb / 1024;
@@ -613,11 +613,11 @@
       // ビット数計算の数式行（フルカラーは展開して表示）
       let bitsLines;
       if (mode === 'fullcolor') {
-        bitsLines = `${width.toLocaleString()} × ${height.toLocaleString()} × (${bitDepth} × 3)<br>`
-                  + `= ${width.toLocaleString()} × ${height.toLocaleString()} × ${bitsPerPixel}<br>`
+        bitsLines = `${cols} × ${rows} × (${bitDepth} × 3)<br>`
+                  + `= ${cols} × ${rows} × ${bitsPerPixel}<br>`
                   + `= <strong>${totalBits.toLocaleString()} bit</strong>`;
       } else {
-        bitsLines = `${width.toLocaleString()} × ${height.toLocaleString()} × ${bitsPerPixel}<br>`
+        bitsLines = `${cols} × ${rows} × ${bitsPerPixel}<br>`
                   + `= <strong>${totalBits.toLocaleString()} bit</strong>`;
       }
 
@@ -625,9 +625,9 @@
         <div class="calc-box">
           <div class="calc-section">
             <div class="calc-title">ビット数でのデータ量</div>
-            <div class="calc-formula-line">横 × 縦 × ビット数/px = 総ビット数</div>
+            <div class="calc-formula-line">横ドット数 × 縦ドット数 × ビット数/px = 総ビット数</div>
             <div class="calc-numbers">${bitsLines}</div>
-            <div class="calc-note">1ピクセルあたり: ${bppLabel}</div>
+            <div class="calc-note">横: ${cols} ドット　縦: ${rows} ドット　1ピクセルあたり: ${bppLabel}</div>
           </div>
           <div class="calc-section">
             <div class="calc-title">バイト（B）換算</div>
@@ -742,7 +742,7 @@
 
       sampleData = values;
       setMetadata(values);
-      renderDataCalc(width, height, currentColorMode, currentBitDepth);
+      renderDataCalc(grid, grid, currentColorMode, currentBitDepth);
       buildJsonOutput(values);
     }
 
